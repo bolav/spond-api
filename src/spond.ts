@@ -8,7 +8,7 @@ interface GetPersonParams {
   user?: string;
 }
 
-interface GetEventsParams {
+export interface GetEventsParams {
   groupId?: string;
   subgroupId?: string;
   includeScheduled?: boolean;
@@ -17,6 +17,23 @@ interface GetEventsParams {
   maxStart?: Date;
   minStart?: Date;
   maxEvents?: number;
+  includeComments?: boolean;
+  includeHidden?: boolean;
+  addProfileInfo?: boolean;
+  order?: 'asc' | 'desc';
+}
+
+export interface GetPostsParams {
+  type?: string;
+  includeComments?: boolean;
+  includeReadStatus?: boolean;
+  includeSeenCount?: boolean;
+  max?: number;
+}
+
+export interface GetUnansweredPostsParams extends GetPostsParams {
+  prevId?: string;
+  maxTimestamp?: Date | string;
 }
 
 interface UpdateEventParams {
@@ -70,14 +87,120 @@ export class Spond extends SpondBase {
     this._events = value;
   }
 
-  async loginChat(): Promise<void> {
-    const apiChatUrl = `${this.apiUrl}chat`;
-    const response = await fetch(apiChatUrl, {
-      method: 'POST',
-      headers: this.authHeaders
+  private async requestJson(path: string, {
+    method = 'GET', params = {}, body, headers = this.authHeaders
+  }: {
+    method?: string;
+    params?: object;
+    body?: unknown;
+    headers?: Record<string, string>;
+  } = {}): Promise<any> {
+    const url = new URL(path, this.apiUrl);
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) {
+        url.searchParams.set(key, value instanceof Date ? value.toISOString() : String(value));
+      }
+    }
+    const response = await fetch(url.toString(), {
+      method, headers, body: body === undefined ? undefined : JSON.stringify(body)
     });
+    if (!response.ok) {
+      throw new Error(`Spond request failed (HTTP ${response.status}): ${method} ${url.pathname}`);
+    }
+    if (response.status === 204) return undefined;
+    return response.json();
+  }
 
-    const result = await response.json();
+  @SpondBase.requireAuthentication
+  async getProfile(): Promise<any> {
+    return this.requestJson('profile');
+  }
+
+  @SpondBase.requireAuthentication
+  async getProfileHash(): Promise<any> {
+    return this.requestJson('profile/hash');
+  }
+
+  @SpondBase.requireAuthentication
+  async getProfileFundraising(): Promise<any> {
+    return this.requestJson('profile/fundraising');
+  }
+
+  @SpondBase.requireAuthentication
+  async getFavoriteGroups(): Promise<any> {
+    return this.requestJson('groups/favorites');
+  }
+
+  @SpondBase.requireAuthentication
+  async getGroupSignupRequests(): Promise<any> {
+    return this.requestJson('groupSignupCode/myRequests');
+  }
+
+  @SpondBase.requireAuthentication
+  async getPostsBadge(): Promise<any> {
+    return this.requestJson('posts/badge');
+  }
+
+  @SpondBase.requireAuthentication
+  async getClock(): Promise<any> {
+    return this.requestJson('clock');
+  }
+
+  @SpondBase.requireAuthentication
+  async getConfig(): Promise<any> {
+    return this.requestJson('config');
+  }
+
+  @SpondBase.requireAuthentication
+  async getUploadRestrictions(): Promise<any> {
+    return this.requestJson('/storage/upload/restrictions');
+  }
+
+  @SpondBase.requireAuthentication
+  async getActivitiesSummary({ lang }: { lang?: string } = {}): Promise<any> {
+    return this.requestJson('activities/summary', { params: { lang } });
+  }
+
+  @SpondBase.requireAuthentication
+  async getPosts(params: GetPostsParams = {}): Promise<any> {
+    return this.requestJson('posts', { params });
+  }
+
+  @SpondBase.requireAuthentication
+  async getUnansweredPosts(params: GetUnansweredPostsParams = {}): Promise<any> {
+    return this.requestJson('posts/unanswered', { params });
+  }
+
+  @SpondBase.requireAuthentication
+  async markPostsSeen({ ids }: { ids: string[] }): Promise<any> {
+    return this.requestJson('seen/posts', { method: 'POST', body: ids });
+  }
+
+  @SpondBase.requireAuthentication
+  async markEventsSeen({ ids }: { ids: string[] }): Promise<any> {
+    return this.requestJson('seen/sponds', { method: 'POST', body: ids });
+  }
+
+  @SpondBase.requireAuthentication
+  async getPostsSeenCount({ ids }: { ids: string[] }): Promise<any> {
+    return this.requestJson('seen/postsCount', { params: { ids: ids.join(',') } });
+  }
+
+  @SpondBase.requireAuthentication
+  async getChatBadge(): Promise<any> {
+    if (!this.auth) await this.loginChat();
+    const url = `${this.chatUrl!.replace(/\/$/, '')}/chats/badge`;
+    return this.requestJson(url, { headers: { ...this.authHeaders, auth: this.auth ?? '' } });
+  }
+
+  // Probe the current token without automatically logging in; HTTP 401 rejects.
+  async testAuthentication(): Promise<any> {
+    return this.requestJson('test');
+  }
+
+  @SpondBase.requireAuthentication
+  async loginChat(): Promise<void> {
+    const result = await this.requestJson('chat', { method: 'POST' });
     this.chatUrl = result.url;
     this.auth = result.auth;
   }
@@ -141,7 +264,7 @@ export class Spond extends SpondBase {
       await this.loginChat();
     }
     const url = `${this.chatUrl}/chats/?max=10`;
-    const response = await fetch(url, { method: 'GET', headers: { 'auth': this.auth ?? '' } });
+    const response = await fetch(url, { method: 'GET', headers: { ...this.authHeaders, 'auth': this.auth ?? '' } });
     return await response.json();
   }
 
@@ -152,7 +275,7 @@ export class Spond extends SpondBase {
     }
     const url = `${this.chatUrl}/messages`;
     const data = { chatId, text, type: 'TEXT' };
-    const response = await fetch(url, { method: 'POST', headers: { 'auth': this.auth ?? '', 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    const response = await fetch(url, { method: 'POST', headers: { ...this.authHeaders, 'auth': this.auth ?? '', 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
     return await response.json();
   }
 
@@ -173,7 +296,7 @@ export class Spond extends SpondBase {
       const userUid = userObj.profile.id;
       const url = `${this.chatUrl}/messages`;
       const data = { text, type: 'TEXT', recipient: userUid, groupId: groupUid };
-      const response = await fetch(url, { method: 'POST', headers: { 'auth': this.auth ?? '', 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      const response = await fetch(url, { method: 'POST', headers: { ...this.authHeaders, 'auth': this.auth ?? '', 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       return await response.json();
     } else {
       return false;
@@ -181,13 +304,17 @@ export class Spond extends SpondBase {
   }
 
   @SpondBase.requireAuthentication
-  async getEvents({ groupId, subgroupId, includeScheduled = false, maxEnd, minEnd, maxStart, minStart, maxEvents = 100 }: GetEventsParams = {}): Promise<any[]> {
+  async getEvents({ groupId, subgroupId, includeScheduled = false, maxEnd, minEnd, maxStart, minStart, maxEvents = 100, includeComments, includeHidden, addProfileInfo, order = 'asc' }: GetEventsParams = {}): Promise<any[]> {
     const url = `${this.apiUrl}sponds/`;
     const params: { [key: string]: string } = {
-      'order': 'asc',
+      'order': order,
       'max': maxEvents.toString(),
       'scheduled': includeScheduled.toString()
     };
+
+    for (const [key, value] of Object.entries({ includeComments, includeHidden, addProfileInfo })) {
+      if (value !== undefined) params[key] = String(value);
+    }
 
     if (maxEnd) {
       params['maxEndTimestamp'] = maxEnd.toISOString();

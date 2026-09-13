@@ -168,6 +168,46 @@ Changes the response of a user for a specific event.
 const response = await spond.changeResponse({ uid: 'event_id', user: 'user_id', payload: { status: 'going' } });
 ```
 
+### Additional captured API methods
+
+These methods return the server's JSON response and automatically authenticate,
+except `testAuthentication()`, which checks the current token and rejects on
+HTTP 401 without logging in.
+
+| Method | Purpose / parameters |
+|---|---|
+| `getProfile()` | Current user's profile |
+| `getProfileHash()` | Profile hashes |
+| `getProfileFundraising()` | Fundraising information |
+| `getFavoriteGroups()` | Favorite groups |
+| `getGroupSignupRequests()` | Group signup requests |
+| `getActivitiesSummary({ lang } = {})` | Activity summary; optional language |
+| `getPosts(params = {})` | Posts; optional `type`, `includeComments`, `includeReadStatus`, `includeSeenCount`, `max` |
+| `getPostsBadge()` | Post badge count |
+| `getUnansweredPosts(params = {})` | Same filters as posts, plus `prevId` and `maxTimestamp` (`Date` or string) |
+| `markPostsSeen({ ids })` | Mark an array of post IDs seen |
+| `markEventsSeen({ ids })` | Mark an array of event IDs seen |
+| `getPostsSeenCount({ ids })` | Seen counts for an array of post IDs |
+| `getChatBadge()` | Chat badge count; initializes the chat session automatically |
+| `getClock()` | Server clock |
+| `getConfig()` | Server configuration |
+| `getUploadRestrictions()` | Upload restrictions |
+| `testAuthentication()` | Authentication probe using the current token |
+
+`getEvents()` also accepts optional `includeComments`, `includeHidden`,
+`addProfileInfo`, and `order: 'asc' | 'desc'` (default `'asc'`). Boolean flags
+are omitted unless provided.
+
+```typescript
+const posts = await spond.getPosts({ includeReadStatus: true, max: 50 });
+await spond.markPostsSeen({ ids: posts.map((post: { id: string }) => post.id) });
+const events = await spond.getEvents({ includeComments: true, order: 'desc' });
+```
+
+New methods reject on non-success HTTP responses and return `undefined` for
+HTTP 204. Their response types remain `any`. See [HAR coverage](docs/har-api-coverage.md)
+for captured routes and verification limits.
+
 ### Error Handling
 
 The Spond class methods throw errors if the API calls fail. Ensure to use try...catch blocks to handle these errors gracefully.
@@ -179,7 +219,3 @@ try {
     console.error('Failed to fetch groups:', error);
 }
 ```
-
-## License
-
-This project is licensed under the MIT License.

@@ -12,6 +12,7 @@ export abstract class SpondBase {
   private _password: string
   private _api_url: string
   private _token: string | null
+  private _tokenExpiration: number | null
   private _session: typeof fetch
 
   constructor(username: string, password: string, api_url: string) {
@@ -19,6 +20,7 @@ export abstract class SpondBase {
     this._password = password
     this._api_url = api_url
     this._token = null
+    this._tokenExpiration = null
     this._session = fetch
   }
 
@@ -52,11 +54,13 @@ export abstract class SpondBase {
 
   set token(value: string | null) {
     this._token = value
+    this._tokenExpiration = null
   }
 
   get authHeaders(): { [key: string]: string } {
     return {
       'content-type': 'application/json',
+      'api-level': '2.7.9',
       'Authorization': `Bearer ${this.token}`
     }
   }
@@ -65,7 +69,7 @@ export abstract class SpondBase {
     const originalMethod = descriptor.value
 
     descriptor.value = async function(this: SpondBase, ...args: any[]) {
-      if (!this.token) {
+      if (!this.token || (this._tokenExpiration !== null && Date.now() >= this._tokenExpiration)) {
         try {
           await this.login()
         } catch (e) {
@@ -79,8 +83,9 @@ export abstract class SpondBase {
   }
 
   async login(): Promise<void> {
-    const login_url = `${this.apiUrl}login`
+    const login_url = `${this.apiUrl}auth2/login`
     const data = { email: this.username, password: this.password }
+    this.token = null
 
     const response = await this._session(login_url, {
       method: 'POST',
@@ -88,11 +93,19 @@ export abstract class SpondBase {
       body: JSON.stringify(data)
     })
 
-    const login_result: any = await response.json()
-    this.token = login_result.loginToken
-
-    if (!this.token) {
-      throw new AuthenticationError(`Login failed. Response received: ${JSON.stringify(login_result)}`)
+    if (!response.ok) {
+      throw new AuthenticationError(`Login failed (HTTP ${response.status}).`)
     }
+
+    const login_result: any = await response.json()
+    const accessToken = login_result?.accessToken
+
+    if (typeof accessToken?.token !== 'string' || !accessToken.token) {
+      throw new AuthenticationError('Login failed. Response did not contain an access token.')
+    }
+
+    this.token = accessToken.token
+    const expiration = Date.parse(accessToken.expiration)
+    this._tokenExpiration = Number.isFinite(expiration) ? expiration : null
   }
 }
