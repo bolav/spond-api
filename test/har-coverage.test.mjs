@@ -9,8 +9,8 @@ const cases = [
   ['getClock', 'clock'], ['getConfig', 'config'],
   ['getUploadRestrictions', '/storage/upload/restrictions'],
   ['getActivitiesSummary', 'activities/summary', { lang: 'en' }, { lang: 'en' }],
-  ['getPosts', 'posts', { type: 'POST', includeComments: false, includeReadStatus: true, includeSeenCount: true, max: 0 },
-    { type: 'POST', includeComments: 'false', includeReadStatus: 'true', includeSeenCount: 'true', max: '0' }],
+  ['getPosts', 'posts', { type: 'PLAIN', includeComments: false, includeReadStatus: true, includeSeenCount: true, max: 0 },
+    { type: 'PLAIN', includeComments: 'false', includeReadStatus: 'true', includeSeenCount: 'true', max: '0' }],
   ['getUnansweredPosts', 'posts/unanswered', { prevId: 'a/b', maxTimestamp: new Date('2026-01-01T00:00:00Z'), max: 10 },
     { prevId: 'a/b', maxTimestamp: '2026-01-01T00:00:00.000Z', max: '10' }],
   ['getPostsSeenCount', 'seen/postsCount', { ids: ['a/b', 'c&d'] }, { ids: 'a/b,c&d' }],
@@ -94,4 +94,33 @@ test('new authenticated methods log in, and the probe reports 401 without loggin
   globalThis.fetch = async () => new Response(null, { status: 204 })
   client.token = 'token'
   assert.equal(await client.markPostsSeen({ ids: [] }), undefined)
+})
+
+// Successful GET /posts from the new HAR, without using its credentials or data.
+test('posts defaults reproduce the successful browser request and support partial overrides', async (t) => {
+  const originalFetch = globalThis.fetch
+  t.after(() => { globalThis.fetch = originalFetch })
+  const client = new Spond('unused', 'unused')
+  client.token = 'token'
+  const expected = {
+    type: 'PLAIN', includeComments: 'true', includeReadStatus: 'true',
+    includeSeenCount: 'true', max: '5'
+  }
+  const calls = []
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(url)
+    assert.equal(parsed.pathname, '/core/v1/posts')
+    const query = Object.fromEntries(parsed.searchParams)
+    calls.push(query)
+    // Model the server rejecting a posts request without its type selector.
+    if (!query.type) return new Response(null, { status: 400 })
+    return Response.json([{ id: 'post-1' }])
+  }
+  assert.deepEqual(await client.getPosts(), [{ id: 'post-1' }])
+  await client.getPosts({})
+  await client.getPosts({ max: 50, includeComments: false })
+  await client.getPosts({ type: 'CUSTOM', includeSeenCount: false })
+  assert.deepEqual(calls, [expected, expected,
+    { ...expected, max: '50', includeComments: 'false' },
+    { ...expected, type: 'CUSTOM', includeSeenCount: 'false' }])
 })

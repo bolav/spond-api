@@ -162,8 +162,13 @@ export class Spond extends SpondBase {
   }
 
   @SpondBase.requireAuthentication
-  async getPosts(params: GetPostsParams = {}): Promise<any> {
-    return this.requestJson('posts', { params });
+  async getPosts({
+    type = 'PLAIN', includeComments = true, includeReadStatus = true,
+    includeSeenCount = true, max = 5
+  }: GetPostsParams = {}): Promise<any> {
+    return this.requestJson('posts', {
+      params: { type, includeComments, includeReadStatus, includeSeenCount, max }
+    });
   }
 
   @SpondBase.requireAuthentication

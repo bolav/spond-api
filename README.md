@@ -182,7 +182,7 @@ HTTP 401 without logging in.
 | `getFavoriteGroups()` | Favorite groups |
 | `getGroupSignupRequests()` | Group signup requests |
 | `getActivitiesSummary({ lang } = {})` | Activity summary; optional language |
-| `getPosts(params = {})` | Posts; optional `type`, `includeComments`, `includeReadStatus`, `includeSeenCount`, `max` |
+| `getPosts(params = {})` | Posts; defaults: `type: 'PLAIN'`, `includeComments: true`, `includeReadStatus: true`, `includeSeenCount: true`, `max: 5`; all can be overridden |
 | `getPostsBadge()` | Post badge count |
 | `getUnansweredPosts(params = {})` | Same filters as posts, plus `prevId` and `maxTimestamp` (`Date` or string) |
 | `markPostsSeen({ ids })` | Mark an array of post IDs seen |
